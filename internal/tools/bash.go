@@ -44,12 +44,12 @@ func (bashTool) Name() string { return "bash" }
 func (bashTool) SideEffecting() bool { return true }
 
 func (b bashTool) Description() string {
-	return fmt.Sprintf("Run a command through Windows PowerShell and return its combined stdout/stderr and exit status. Commands are killed after %s.", b.timeout)
+	return fmt.Sprintf("Run a command, return its combined stdout/stderr and exit status. Killed after %s.", b.timeout)
 }
 
 func (bashTool) Schema() map[string]any {
 	return objectSchema(map[string]any{
-		"command": strProp("The command line to run via PowerShell."),
+		"command": strProp("Command line."),
 	}, "command")
 }
 
@@ -67,7 +67,8 @@ func (b bashTool) Execute(ctx context.Context, input json.RawMessage) (string, b
 	runCtx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", args.Command)
+	// cmd := exec.CommandContext(runCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", args.Command)
+	cmd := exec.CommandContext(runCtx, "bash", "-c", args.Command)
 	out, err := cmd.CombinedOutput()
 
 	if runCtx.Err() == context.DeadlineExceeded {

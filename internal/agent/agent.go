@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"mewcode/internal/conversation"
 	"mewcode/internal/llm"
+	"mewcode/internal/memory"
 	"mewcode/internal/permission"
 	"mewcode/internal/tools"
 )
@@ -47,6 +49,14 @@ func (PermissionAsked) event() {}
 func (TurnFinished) event()    {}
 func (ErrorOccurred) event()   {}
 
+// SessionInfo is a /session list entry surfaced to the UI.
+type SessionInfo struct {
+	ID      string
+	Title   string
+	Count   int
+	Current bool
+}
+
 // Agent owns the conversation and drives one user turn at a time. It talks to
 // the UI only through the events and decisions channels — it never touches UI
 // state — satisfying the loop/UI decoupling requirement.
@@ -55,6 +65,7 @@ type Agent struct {
 	tools  *tools.Registry
 	perm   *permission.Manager
 	conv   *conversation.Manager
+	memory *memory.Store
 
 	events    chan Event
 	decisions chan permission.UserDecision
@@ -81,6 +92,66 @@ func (a *Agent) SubmitDecision(d permission.UserDecision) { a.decisions <- d }
 // SetMode switches the permission mode at runtime (UI command).
 func (a *Agent) SetMode(mode string) { a.perm.SetMode(mode) }
 
+// SetMemory installs the persistence backend. It is optional: a nil store leaves
+// the loop fully in-memory (as in the existing tests).
+func (a *Agent) SetMemory(s *memory.Store) { a.memory = s }
+
+// LoadHistory replaces the in-memory conversation, used when a /session is
+// selected.
+func (a *Agent) LoadHistory(msgs []conversation.Message) {
+	a.conv.ReplaceAll(msgs)
+}
+
+// ListSessions returns /session entries, marking the current session.
+func (a *Agent) ListSessions() []SessionInfo {
+	if a.memory == nil {
+		return nil
+	}
+	sums, err := a.memory.ListSessions()
+	if err != nil {
+		return nil
+	}
+	cur := a.memory.SessionID()
+	out := make([]SessionInfo, 0, len(sums))
+	for _, s := range sums {
+		out = append(out, SessionInfo{ID: s.ID, Title: s.Title, Count: s.Count, Current: s.ID == cur})
+	}
+	return out
+}
+
+// CurrentSessionID returns the current session id, or "" when memory is off.
+func (a *Agent) CurrentSessionID() string {
+	if a.memory == nil {
+		return ""
+	}
+	return a.memory.SessionID()
+}
+
+// LoadSession selects and loads an existing session into the conversation.
+func (a *Agent) LoadSession(id string) error {
+	if a.memory == nil {
+		return errors.New("memory is disabled")
+	}
+	sess, err := a.memory.LoadSession(id)
+	if err != nil {
+		return err
+	}
+	a.conv.ReplaceAll(memory.RecordsToMessages(sess.Records))
+	return nil
+}
+
+// NewSession starts a fresh empty session and clears the in-memory conversation.
+func (a *Agent) NewSession() error {
+	if a.memory == nil {
+		return errors.New("memory is disabled")
+	}
+	if err := a.memory.NewSession(); err != nil {
+		return err
+	}
+	a.conv.ReplaceAll(nil)
+	return nil
+}
+
 // History returns a copy of the conversation so far (for tests and inspection).
 func (a *Agent) History() []conversation.Message { return a.conv.GetMessages() }
 
@@ -95,6 +166,9 @@ func (a *Agent) Start(ctx context.Context, userInput string) {
 // the caller drives permission answers via SubmitDecision.
 func (a *Agent) RunTurn(ctx context.Context, userInput string) {
 	a.conv.AddUserText(userInput)
+	if a.memory != nil {
+		a.memory.RecordUser(userInput)
+	}
 
 	for {
 		text, toolCalls, err := a.streamOnce(ctx)
@@ -103,6 +177,9 @@ func (a *Agent) RunTurn(ctx context.Context, userInput string) {
 			return
 		}
 		a.conv.AddAssistant(text, toolCalls)
+		if a.memory != nil {
+			a.memory.RecordAssistant(text, toolCalls)
+		}
 		if len(toolCalls) == 0 {
 			break // the model produced a final answer; turn is done
 		}
@@ -112,10 +189,16 @@ func (a *Agent) RunTurn(ctx context.Context, userInput string) {
 			results = append(results, a.handleToolCall(ctx, tc))
 		}
 		a.conv.AddToolResults(results)
+		if a.memory != nil {
+			a.memory.RecordToolResults(results)
+		}
 		// loop: feed the results back to the model for the next step
 	}
 
 	a.events <- TurnFinished{}
+	if a.memory != nil {
+		a.memory.EndTurn(ctx, a.conv)
+	}
 }
 
 // streamOnce runs a single backend request, accumulating the assistant text and

@@ -211,7 +211,7 @@ func TestGrepFindsMatch(t *testing.T) {
 func TestBashRunAndTimeout(t *testing.T) {
 	bash := NewBashTool(2 * time.Second)
 	out, isErr := bash.Execute(context.Background(),
-		args(t, map[string]any{"command": "Write-Output mewcode-ok"}))
+		args(t, map[string]any{"command": "echo mewcode-ok"}))
 	if isErr {
 		t.Fatalf("bash run failed: %s", out)
 	}
@@ -221,7 +221,7 @@ func TestBashRunAndTimeout(t *testing.T) {
 
 	slow := NewBashTool(300 * time.Millisecond)
 	out, isErr = slow.Execute(context.Background(),
-		args(t, map[string]any{"command": "Start-Sleep -Seconds 5"}))
+		args(t, map[string]any{"command": "sleep 5"}))
 	if !isErr {
 		t.Errorf("slow command should time out, got %q", out)
 	}
@@ -231,7 +231,7 @@ func TestBashRunAndTimeout(t *testing.T) {
 
 	// a chatty command's output is capped, not dumped whole.
 	out, isErr = bash.Execute(context.Background(),
-		args(t, map[string]any{"command": "Write-Output ('x' * 100000)"}))
+		args(t, map[string]any{"command": "printf 'a%.0s' {1..10000}"}))
 	if isErr {
 		t.Fatalf("bash run failed: %s", out)
 	}

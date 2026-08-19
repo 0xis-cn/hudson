@@ -97,6 +97,38 @@ func (m *Manager) Len() int {
 	return len(m.history)
 }
 
+// ReplaceAll replaces the entire in-memory history with a deep copy of msgs.
+// It is used when loading a persisted session so callers cannot retain a
+// reference into the manager's internal slice.
+func (m *Manager) ReplaceAll(msgs []Message) {
+	out := make([]Message, len(msgs))
+	for i, msg := range msgs {
+		out[i] = Message{
+			Role:        msg.Role,
+			Content:     msg.Content,
+			ToolUses:    cloneToolUses(msg.ToolUses),
+			ToolResults: cloneToolResults(msg.ToolResults),
+		}
+	}
+	m.history = out
+}
+
+// TrimToLast keeps only the last n messages, dropping the older prefix. It is
+// used by memory folding to truncate the in-memory tail while the summarised
+// prefix is persisted as a project note. A non-positive n clears the history.
+func (m *Manager) TrimToLast(n int) {
+	if n <= 0 {
+		m.history = nil
+		return
+	}
+	if n >= len(m.history) {
+		return
+	}
+	keep := make([]Message, n)
+	copy(keep, m.history[len(m.history)-n:])
+	m.history = keep
+}
+
 func cloneToolUses(in []ToolUseBlock) []ToolUseBlock {
 	if len(in) == 0 {
 		return nil

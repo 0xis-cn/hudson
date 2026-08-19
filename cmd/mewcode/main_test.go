@@ -13,7 +13,7 @@ import (
 
 // TestDemoBackendDrivesARealTurn proves the --fake demo works end to end at the
 // code level: the demo backend streams text, the agent loop runs a real tool,
-// and the turn completes. (The terminal rendering is covered by the tui tests.)
+// and the turn completes.
 func TestDemoBackendDrivesARealTurn(t *testing.T) {
 	a := agent.New(demoClient{}, tools.DefaultRegistry(), permission.NewManager(config.ModeAuto))
 
