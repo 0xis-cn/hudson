@@ -116,6 +116,12 @@ func (m *Manager) ReplaceAll(msgs []Message) {
 // TrimToLast keeps only the last n messages, dropping the older prefix. It is
 // used by memory folding to truncate the in-memory tail while the summarised
 // prefix is persisted as a project note. A non-positive n clears the history.
+//
+// The cut is snapped back to a clean turn boundary (a user message carrying no
+// tool results). Trimming inside a turn would otherwise orphan tool results:
+// OpenAI requires a role:"tool" message to directly follow the assistant turn
+// that issued the matching tool_calls, and neither wire format accepts a
+// retained window that starts with a tool-result user message.
 func (m *Manager) TrimToLast(n int) {
 	if n <= 0 {
 		m.history = nil
@@ -124,9 +130,19 @@ func (m *Manager) TrimToLast(n int) {
 	if n >= len(m.history) {
 		return
 	}
-	keep := make([]Message, n)
-	copy(keep, m.history[len(m.history)-n:])
+	start := len(m.history) - n
+	for start > 0 && !isTurnStart(m.history[start]) {
+		start--
+	}
+	keep := make([]Message, len(m.history)-start)
+	copy(keep, m.history[start:])
 	m.history = keep
+}
+
+// isTurnStart reports whether a message is a safe place to begin a retained
+// history window: a plain user turn with no tool results.
+func isTurnStart(m Message) bool {
+	return m.Role == RoleUser && len(m.ToolResults) == 0
 }
 
 func cloneToolUses(in []ToolUseBlock) []ToolUseBlock {

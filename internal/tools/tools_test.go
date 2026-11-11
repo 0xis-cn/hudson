@@ -231,7 +231,7 @@ func TestBashRunAndTimeout(t *testing.T) {
 
 	// a chatty command's output is capped, not dumped whole.
 	out, isErr = bash.Execute(context.Background(),
-		args(t, map[string]any{"command": "printf 'a%.0s' {1..10000}"}))
+		args(t, map[string]any{"command": "printf 'a%.0s' {1..70000}"}))
 	if isErr {
 		t.Fatalf("bash run failed: %s", out)
 	}

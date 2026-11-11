@@ -28,16 +28,18 @@ func NewRegistry(tools ...Tool) *Registry {
 	return r
 }
 
-// DefaultRegistry returns a registry with the six built-in tools.
-func DefaultRegistry() *Registry {
-	return NewRegistry(
+// DefaultRegistry returns a registry with the six built-in tools, followed by
+// any extra tools (e.g. the skill-activation tool) supplied by the caller.
+func DefaultRegistry(extra ...Tool) *Registry {
+	base := []Tool{
 		NewReadTool(),
 		NewWriteTool(),
 		NewEditTool(),
 		NewGlobTool(),
 		NewGrepTool(),
 		NewBashTool(DefaultBashTimeout),
-	)
+	}
+	return NewRegistry(append(base, extra...)...)
 }
 
 // Definitions returns the tool list a provider sends to the model: name,

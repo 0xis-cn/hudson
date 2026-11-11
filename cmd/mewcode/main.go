@@ -14,6 +14,7 @@ import (
 	"mewcode/internal/llm"
 	"mewcode/internal/memory"
 	"mewcode/internal/permission"
+	"mewcode/internal/skills"
 	"mewcode/internal/systemprompt"
 	"mewcode/internal/tools"
 )
@@ -49,6 +50,14 @@ func main() {
 		prompt += "\n" + idx
 	}
 
+	// Discover Agent Skills from ~/.hudson/skills (user) and <workdir>/.hudson/skills
+	// (project). Only name + description go into the system prompt; bodies are
+	// reread from disk by the activate_skill tool at activation time.
+	skillsMgr := skills.NewManager(store.Root(), wd)
+	if catalog := skillsMgr.Catalog(); catalog != "" {
+		prompt += "\n" + catalog
+	}
+
 	var client llm.Client
 	if cfg.Fake {
 		client = demoClient{} // offline demo backend, no API key needed
@@ -69,7 +78,7 @@ func main() {
 		store.SetClient(memClient)
 	}
 
-	a := agent.New(client, tools.DefaultRegistry(), permission.NewManager(cfg.Mode))
+	a := agent.New(client, registry(skillsMgr), permission.NewManager(cfg.Mode))
 	a.SetMemory(store)
 
 	// On opening, load the most recent session into the conversation.
@@ -82,4 +91,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "mewcode:", err)
 		os.Exit(1)
 	}
+}
+
+// registry builds the tool registry, appending the skill-activation tool only
+// when at least one skill was discovered (so the model is never offered a tool
+// with no valid options).
+func registry(mgr *skills.Manager) *tools.Registry {
+	if mgr.Len() == 0 {
+		return tools.DefaultRegistry()
+	}
+	return tools.DefaultRegistry(skills.NewActivateTool(mgr))
 }

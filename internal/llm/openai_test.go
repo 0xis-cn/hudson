@@ -139,3 +139,28 @@ func TestBuildOpenAIMessagesTranslatesToolFlow(t *testing.T) {
 		t.Errorf("tool result message wrong: %+v", msgs[3])
 	}
 }
+
+// C9: a tool result whose tool call was trimmed away must not become an
+// orphaned role:"tool" message, which OpenAI rejects with a 400.
+func TestBuildOpenAIMessagesSkipsOrphanedToolResults(t *testing.T) {
+	conv := conversation.NewManager()
+	// No assistant tool-call message precedes these results.
+	conv.AddToolResults([]conversation.ToolResultBlock{
+		{ToolUseID: "call_orphan", Content: "stale output", IsError: false},
+	})
+	conv.AddAssistant("final answer", nil)
+
+	msgs := buildOpenAIMessages("sys", conv.GetMessages())
+	// system, user(tool results, skipped), assistant
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2: %+v", len(msgs), msgs)
+	}
+	for _, m := range msgs {
+		if m.Role == "tool" {
+			t.Errorf("orphaned tool message should be skipped: %+v", m)
+		}
+	}
+	if msgs[1].Role != "assistant" || msgs[1].Content != "final answer" {
+		t.Errorf("assistant message wrong: %+v", msgs[1])
+	}
+}

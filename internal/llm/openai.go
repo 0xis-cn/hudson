@@ -189,10 +189,17 @@ func buildOpenAIMessages(system string, msgs []conversation.Message) []oaiMessag
 	if system != "" {
 		out = append(out, oaiMessage{Role: "system", Content: system})
 	}
+	seen := map[string]bool{}
 	for _, m := range msgs {
 		switch {
 		case m.Role == conversation.RoleUser && len(m.ToolResults) > 0:
 			for _, r := range m.ToolResults {
+				// Skip orphaned results whose tool call was trimmed away:
+				// OpenAI rejects a role:"tool" message with no preceding
+				// assistant tool_calls carrying the same id.
+				if !seen[r.ToolUseID] {
+					continue
+				}
 				content := r.Content
 				if r.IsError {
 					content = "ERROR: " + content
@@ -202,6 +209,7 @@ func buildOpenAIMessages(system string, msgs []conversation.Message) []oaiMessag
 		case m.Role == conversation.RoleAssistant:
 			msg := oaiMessage{Role: "assistant", Content: m.Content}
 			for _, tu := range m.ToolUses {
+				seen[tu.ID] = true
 				args := string(tu.Input)
 				if args == "" {
 					args = "{}"
